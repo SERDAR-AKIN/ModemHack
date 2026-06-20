@@ -49,7 +49,7 @@ Look for interfaces in a state other than `LOOPBACK` (usually `UP` or `DOWN`). P
 
 ## Triggering the Capture
 
-When you see the message `[!] HAZIR! Modemi şimdi yeniden başlatın.` printed to the console:
+When you see the message `[!] READY! Reboot the modem now.` printed to the console:
 
 1. Unplug the modem's power cable and wait about 10 seconds.
 2. Plug the power cable back in.
@@ -69,18 +69,18 @@ The tool prints progress messages with a prefix convention:
 
 Key console messages and what they mean:
 
-- `[!] HAZIR! Modemi şimdi yeniden başlatın.` — The tool is ready and listening. Reboot the modem now. (Console messages are kept in Turkish to match the source code output.)
-- `PADI Yakalandı` — A PPPoE Active Discovery Initiation packet was captured from the modem ("Is anyone out there?").
-- `PADO Gönderildi (VLAN 0 Response)` — The tool sent a PPPoE Active Discovery Offer back, posing as a BRAS (Telekom central office).
-- `PADR Yakalandı` — The modem accepted the offer with a PPPoE Active Discovery Request.
-- `PADS Gönderildi (Session ID: ...)` — Session confirmation sent; a PPPoE session is now established.
-- `LCP Config-Request (ID: ...)` — Link Control Protocol handshake in progress (MRU negotiation, Magic Number exchange).
-- `LCP ACK İletildi` — LCP configuration acknowledged.
-- `PAP Auth Talebi Gönderildi` — PAP authentication request transmitted, forcing the modem to send credentials in clear text.
-- `PPPoE KİMLİK BİLGİLERİ YAKALANDI!` — PAP credentials captured successfully.
-- `Kullanıcı Adı: ... / Şifre: ...` — The extracted username and password printed to the console.
-- `[+] Sonuçlar kaydedildi: ...` — Credentials successfully saved to the logs directory.
-- `[!] Zaman aşımı (...s). Şifre yakalanamadı.` — Timeout reached without capturing credentials.
+- `[!] READY! Reboot the modem now.` — The tool is ready and listening. Reboot the modem now.
+- `[*] PADI Captured` — A PPPoE Active Discovery Initiation packet was captured from the modem ("Is anyone out there?").
+- `[+] PADO Sent (VLAN 0 Response)` — The tool sent a PPPoE Active Discovery Offer back, posing as a BRAS (Telekom central office).
+- `[*] PADR Captured` — The modem accepted the offer with a PPPoE Active Discovery Request.
+- `[+] PADS Sent (Session ID: 0x5555)` — Session confirmation sent; a PPPoE session is now established.
+- `[*] LCP Config-Request (ID: ...)` — Link Control Protocol handshake in progress (MRU negotiation, Magic Number exchange).
+- `[+] LCP ACK Sent` — LCP configuration acknowledged.
+- `[+] PAP Auth Request Sent` — PAP authentication request transmitted, forcing the modem to send credentials in clear text.
+- `🎉 PPPoE CREDENTIALS CAPTURED!` — PAP credentials captured successfully.
+- `Username: ... / Password: ...` — The extracted username and password printed to the console.
+- `[+] Results saved: logs/credentials_*.json` — Credentials successfully saved to the logs directory.
+- `[!] Timeout (180s). Password not captured.` — Timeout reached without capturing credentials.
 
 ### Output Files
 
